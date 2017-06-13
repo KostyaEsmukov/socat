@@ -224,6 +224,8 @@ size_t _packet_len_from_ip6_header(const uint8_t *buff, size_t bufsiz) {
    return (((size_t)buff[4]) << 8) | buff[5];
 }
 
+// todo read until pi
+
 size_t _packet_len(struct single *pipe, const uint8_t *buff, size_t bufsiz) {
    if (pipe->para.tun.tuntype == XIOTUNTYPE_TUN) {
       if (pipe->para.tun.no_pi) {
@@ -233,7 +235,7 @@ size_t _packet_len(struct single *pipe, const uint8_t *buff, size_t bufsiz) {
          if (bufsiz < 4)
             return 0; // return to wait until buffer is full enough
          uint16_t proto = (((uint16_t)buff[2]) << 8) | buff[3];
-         Notice1("Proto %x", proto);
+         Debug1("Proto %x", proto);
          size_t to_write;
          switch(proto) {
             case 0x0800: // ip 4 ETH_P_IP

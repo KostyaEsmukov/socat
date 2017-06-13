@@ -701,7 +701,8 @@ int childleftdata(xiofile_t *xfd) {
 }
 
 int xiotransfer(xiofile_t *inpipe, xiofile_t *outpipe,
-		unsigned char **buff, size_t bufsiz, bool righttoleft);
+        unsigned char **buff, size_t * buff_pos, size_t bufsiz,
+        bool righttoleft);
 
 bool mayrd1;		/* sock1 has read data or eof, according to poll() */
 bool mayrd2;		/* sock2 has read data or eof, according to poll() */
@@ -719,6 +720,7 @@ int _socat(void) {
        *fd2out = &fds[3];
    int retval;
    unsigned char *buff;
+   size_t buff_pos = 0;
    ssize_t bytes1, bytes2;
    int polling = 0;	/* handling ignoreeof */
    int wasaction = 1;	/* last poll was active, do NOT sleep before next */
@@ -977,7 +979,7 @@ int _socat(void) {
 
       if (mayrd1 && maywr2) {
 	 mayrd1 = false;
-	 if ((bytes1 = xiotransfer(sock1, sock2, &buff, socat_opts.bufsiz, false))
+	 if ((bytes1 = xiotransfer(sock1, sock2, &buff, &buff_pos, socat_opts.bufsiz, false))
 	     < 0) {
 	    if (errno != EAGAIN) {
 	       closing = MAX(closing, 1);
@@ -1009,7 +1011,7 @@ int _socat(void) {
 
       if (mayrd2 && maywr1) {
 	 mayrd2 = false;
-	 if ((bytes2 = xiotransfer(sock2, sock1, &buff, socat_opts.bufsiz, true))
+	 if ((bytes2 = xiotransfer(sock2, sock1, &buff, &buff_pos, socat_opts.bufsiz, true))
 	     < 0) {
 	    if (errno != EAGAIN) {
 	       closing = MAX(closing, 1);
@@ -1183,10 +1185,11 @@ static int
    */
 /* inpipe, outpipe must be single descriptors (not dual!) */
 int xiotransfer(xiofile_t *inpipe, xiofile_t *outpipe,
-		unsigned char **buff, size_t bufsiz, bool righttoleft) {
+        unsigned char **buff, size_t * buff_pos, size_t bufsiz,
+        bool righttoleft) {
    ssize_t bytes, writt = 0;
 
-	 bytes = xioread(inpipe, *buff, bufsiz);
+	 bytes = xioread(inpipe, *buff + *buff_pos, bufsiz - *buff_pos);
 	 if (bytes < 0) {
 	    if (errno != EAGAIN)
 	       XIO_RDSTREAM(inpipe)->eof = 2;
@@ -1199,6 +1202,8 @@ int xiotransfer(xiofile_t *inpipe, xiofile_t *outpipe,
 	    XIO_RDSTREAM(inpipe)->eof = 2;
 	    closing = MAX(closing, 1);
 	 }
+
+     bytes += *buff_pos;  // treat buff head as if it was just read
 
 	 if (bytes > 0) {
 	    /* handle escape char */
@@ -1328,10 +1333,15 @@ int xiotransfer(xiofile_t *inpipe, xiofile_t *outpipe,
 		  return 0;	/* can no longer write; handle like EOF */
 	       }
 #endif
+           *buff_pos = bytes;
 	       return -1;
 	    } else {
 	       Info3("transferred "F_Zu" bytes from %d to %d",
 		     writt, XIO_GETRDFD(inpipe), XIO_GETWRFD(outpipe));
+           Debug3("move! bytes %d  writt %d  old pos %d", bytes, writt, *buff_pos);
+           *buff_pos = bytes - writt;
+           if (*buff_pos != 0)
+              memmove(*buff, *buff + writt, *buff_pos);
 	    }
 	 }
    return writt;
