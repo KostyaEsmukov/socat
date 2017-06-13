@@ -101,6 +101,7 @@ static int xioopen_tun(int argc, const char *argv[], struct opt *opts, int xiofl
    if ((result = _xioopen_open(tundevice, rw, opts)) < 0)
       return result;
    xfd->stream.fd = result;
+   xfd->stream.dtype = XIODATA_TUN;
 
    /* prepare configuration of the new network interface */
    memset(&ifr, 0,sizeof(ifr));
@@ -113,15 +114,18 @@ static int xioopen_tun(int argc, const char *argv[], struct opt *opts, int xiofl
    }
 
    ifr.ifr_flags = IFF_TUN;
+   xfd->stream.para.tun.tuntype = XIOTUNTYPE_TUN;
    if (retropt_string(opts, OPT_TUN_TYPE, &tuntype) == 0) {
       if (!strcmp(tuntype, "tap")) {
 	 ifr.ifr_flags = IFF_TAP;
+         xfd->stream.para.tun.tuntype = XIOTUNTYPE_TAP;
       } else if (strcmp(tuntype, "tun")) {
 	 Error1("unknown tun-type \"%s\"", tuntype);
       }
    }
 
    if (retropt_bool(opts, OPT_IFF_NO_PI, &no_pi) == 0) {
+      xfd->stream.para.tun.no_pi = no_pi;
       if (no_pi) {
 	 ifr.ifr_flags |= IFF_NO_PI;
 #if 0 /* not neccessary for now */
@@ -206,6 +210,96 @@ static int xioopen_tun(int argc, const char *argv[], struct opt *opts, int xiofl
       return result;
 
    return 0;
+}
+
+size_t _packet_len_from_ip_header(const uint8_t *buff, size_t bufsiz) {
+   if (bufsiz < 4)
+      return 0;
+   return (((size_t)buff[2]) << 8) | buff[3];
+}
+
+size_t _packet_len_from_ip6_header(const uint8_t *buff, size_t bufsiz) {
+   if (bufsiz < 6)
+      return 0;
+   return (((size_t)buff[4]) << 8) | buff[5];
+}
+
+size_t _packet_len(struct single *pipe, const uint8_t *buff, size_t bufsiz) {
+   if (pipe->para.tun.tuntype == XIOTUNTYPE_TUN) {
+      if (pipe->para.tun.no_pi) {
+         // todo is it always ip4?
+         return _packet_len_from_ip_header(buff, bufsiz);
+      } else {
+         if (bufsiz < 4)
+            return 0; // return to wait until buffer is full enough
+         uint16_t proto = (((uint16_t)buff[2]) << 8) | buff[3];
+         Notice1("Proto %x", proto);
+         size_t to_write;
+         switch(proto) {
+            case 0x0800: // ip 4 ETH_P_IP
+               to_write = _packet_len_from_ip_header(&buff[4], bufsiz - 4);
+               break;
+            case 0x86DD: // ip 6 ETH_P_IPV6
+               to_write = _packet_len_from_ip6_header(&buff[4], bufsiz - 4);
+               break;
+            default:
+               // unknown
+               return bufsiz;
+         }
+         if (to_write > 0)
+            return 4 + to_write;
+         return 0;
+      }
+   } else {
+      // todo tap
+      return bufsiz;
+   }
+}
+
+/* on result < 0: errno reflects the value from write() */
+ssize_t xiowrite_tun(struct single *pipe, const void *buff, size_t bufsiz) {
+   int _errno;
+   ssize_t writt_total = 0;
+
+   while (writt_total < bufsiz) {
+      ssize_t packet_len = _packet_len(pipe, buff + writt_total, bufsiz - writt_total);
+      if (packet_len == 0 || packet_len > bufsiz) {
+         Debug1("Skipping buf len %d", bufsiz);
+         if (writt_total == 0) {
+            // don't write anything yet, wait until buffer contains full
+            // IP packet
+            errno = EAGAIN;
+            return -1;
+         }
+         break;
+      }
+
+      if (packet_len != bufsiz) {
+         Debug2("Partial packetwrite. %d out of %d", packet_len, bufsiz);
+      }
+
+      ssize_t writt = writefull(pipe->fd, buff, packet_len);
+      if (writt < 0) {
+         _errno = errno;
+         switch (_errno) {
+            case EPIPE:
+            case ECONNRESET:
+               if (pipe->cool_write) {
+                  Notice4("write(%d, %p, "F_Zu"): %s",
+                        pipe->fd, buff, packet_len, strerror(_errno));
+                  break;
+               }
+               /*PASSTHROUGH*/
+            default:
+               Error4("write(%d, %p, "F_Zu"): %s",
+                     pipe->fd, buff, packet_len, strerror(_errno));
+         }
+         errno = _errno;
+         return -1;
+      }
+      writt_total += writt;
+   }
+   return writt_total;
 }
 
 #endif /* WITH_TUN */

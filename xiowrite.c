@@ -10,6 +10,7 @@
 
 #include "xio-readline.h"
 #include "xio-openssl.h"
+#include "xio-tun.h"
 
 
 /* ...
@@ -86,7 +87,7 @@ ssize_t xiowrite(xiofile_t *file, const void *buff, size_t bytes) {
 	 char infobuff[256];
 	 _errno = errno;
 	 Error6("sendto(%d, %p, "F_Zu", 0, %s, "F_socklen"): %s",
-		pipe->fd, buff, bytes, 
+		pipe->fd, buff, bytes,
 		sockaddr_info(&pipe->peersa.soa, pipe->salen,
 			      infobuff, sizeof(infobuff)),
 		pipe->salen, strerror(_errno));
@@ -96,7 +97,7 @@ ssize_t xiowrite(xiofile_t *file, const void *buff, size_t bytes) {
       if ((size_t)writt < bytes) {
 	 char infobuff[256];
 	 Warn7("sendto(%d, %p, "F_Zu", 0, %s, "F_socklen") only wrote "F_Zu" of "F_Zu" bytes",
-	       pipe->fd, buff, bytes, 
+	       pipe->fd, buff, bytes,
 	       sockaddr_info(&pipe->peersa.soa, pipe->salen,
 			     infobuff, sizeof(infobuff)),
 	       pipe->salen, writt, bytes);
@@ -134,6 +135,12 @@ ssize_t xiowrite(xiofile_t *file, const void *buff, size_t bytes) {
 	 return -1;
       }
       break;
+
+#if WITH_TUN
+   case XIOWRITE_TUN:
+      /* this function prints its own error messages */
+      return xiowrite_tun(pipe, buff, bytes);
+#endif /* WITH_TUN */
 
 #if WITH_OPENSSL
    case XIOWRITE_OPENSSL:

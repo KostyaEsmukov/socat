@@ -30,4 +30,6 @@ extern const struct optdesc opt_iff_automedia;
 
 extern const struct addrdesc xioaddr_tun;
 
+extern ssize_t xiowrite_tun(struct single *file, const void *buff, size_t bufsiz);
+
 #endif /* !defined(__xio_tun_h_included) */

@@ -54,6 +54,7 @@ struct opt;
 #define XIOWRITE_2PIPE		0x0400	/* write() to alternate (2pipe) Fd */
 #define XIOWRITE_READLINE	0x0500	/* check for prompt */
 #define XIOWRITE_OPENSSL	0x0600	/* SSL_write() */
+#define XIOWRITE_TUN	        0x0700	/* write to /dev/tun */
 /* modifiers to XIODATA_READ_RECV */
 #define XIOREAD_RECV_CHECKPORT	0x0001	/* recv, check peer port */
 #define XIOREAD_RECV_CHECKADDR	0x0002	/* recv, check peer address */
@@ -76,7 +77,7 @@ struct opt;
 #define XIODATA_PTY		(XIOREAD_PTY|XIOWRITE_STREAM)
 #define XIODATA_READLINE	(XIOREAD_READLINE|XIOWRITE_STREAM)
 #define XIODATA_OPENSSL		(XIOREAD_OPENSSL|XIOWRITE_OPENSSL)
-
+#define XIODATA_TUN             (XIOREAD_STREAM|XIOWRITE_TUN)
 
 /* these are the values allowed for the "enum xiotag  tag" flag of the "struct
    single" and "union bipipe" (xiofile_t) structures. */
@@ -115,7 +116,7 @@ extern xioopts_t xioopts;
 
 #define MAXARGV 8
 
-/* a non-dual file descriptor */ 
+/* a non-dual file descriptor */
 typedef struct single {
    enum xiotag tag;	/* see  enum xiotag  */
    const struct addrdesc *addr;
@@ -128,7 +129,7 @@ typedef struct single {
 #endif /* WITH_RETRY */
    bool   ignoreeof;	/* option ignoreeof; do not pass eof condition to app*/
    int    eof;		/* 1..exec'd child has died, but no explicit eof
-			   occurred 
+			   occurred
 			   2..fd0 has reached EOF (definitely; never with
 			   ignoreeof! */
    size_t wsize;	/* write always this size; 0..all available */
@@ -235,6 +236,11 @@ typedef struct single {
 #if WITH_TUN
       struct {
 	 short iff_opts[2];	/* ifr flags, using OFUNC_OFFSET_MASKS */
+         enum {
+             XIOTUNTYPE_TUN,
+             XIOTUNTYPE_TAP,
+         } tuntype;
+         bool no_pi;
       } tun;
 #endif /* WITH_TUN */
    } para;
@@ -332,7 +338,7 @@ union integral {
 #if HAVE_STRUCT_LINGER
    struct linger  u_linger;
 #endif /* HAVE_STRUCT_LINGER */
-#if HAVE_STRUCT_TIMESPEC	
+#if HAVE_STRUCT_TIMESPEC
    struct timespec u_timespec;
 #endif /* HAVE_STRUCT_TIMESPEC */
 #if HAVE_STRUCT_IP_MREQ || HAVE_STRUCT_IP_MREQN
