@@ -32,4 +32,7 @@ extern const struct addrdesc xioaddr_tun;
 
 extern ssize_t xiowrite_tun(struct single *file, const void *buff, size_t bufsiz);
 
+#define XIO_TUN_PI_LENGTH 4
+#define XIO_TUN_ETHERNET_LENGTH (6+6+2)
+
 #endif /* !defined(__xio_tun_h_included) */

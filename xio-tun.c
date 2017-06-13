@@ -212,49 +212,100 @@ static int xioopen_tun(int argc, const char *argv[], struct opt *opts, int xiofl
    return 0;
 }
 
-size_t _packet_len_from_ip_header(const uint8_t *buff, size_t bufsiz) {
+ssize_t _packet_len_from_ip_header(const uint8_t *buff, size_t bufsiz) {
    if (bufsiz < 4)
       return 0;
+
+   if ((buff[0] >> 4) != 4)
+       return -1; // not ipv4
+
    return (((size_t)buff[2]) << 8) | buff[3];
 }
 
-size_t _packet_len_from_ip6_header(const uint8_t *buff, size_t bufsiz) {
+ssize_t _packet_len_from_ip6_header(const uint8_t *buff, size_t bufsiz) {
    if (bufsiz < 6)
       return 0;
+
+   if ((buff[0] >> 4) != 6)
+       return -1; // not ipv6
+
    return (((size_t)buff[4]) << 8) | buff[5];
 }
 
-// todo read until pi
+ssize_t _packet_len_from_arp_header(const uint8_t *buff, size_t bufsiz) {
+    if (bufsiz < 2)
+        return 0;
+    if (!(buff[0] == 0 && buff[1] == 1)) // hardware type == ethernet
+        return -1; // not arp
+    return 28;  // it's fixed
+}
+
+ssize_t _len_to_write_from_l3(uint16_t proto, const uint8_t *buff, size_t bufsiz) {
+   switch(proto) {
+      case 0x0800: // ip 4 ETH_P_IP
+         return _packet_len_from_ip_header(buff, bufsiz);
+      case 0x86DD: // ip 6 ETH_P_IPV6
+         return _packet_len_from_ip6_header(buff, bufsiz);
+      case 0x0806:
+         return _packet_len_from_arp_header(buff, bufsiz);
+      default:
+         // unknown. Let's hope it is fully in buffer. Tun will break otherwise
+         return bufsiz;
+   }
+}
 
 size_t _packet_len(struct single *pipe, const uint8_t *buff, size_t bufsiz) {
-   if (pipe->para.tun.tuntype == XIOTUNTYPE_TUN) {
-      if (pipe->para.tun.no_pi) {
+   if (pipe->para.tun.no_pi) {
+      if (pipe->para.tun.tuntype == XIOTUNTYPE_TUN) {
          // todo is it always ip4?
          return _packet_len_from_ip_header(buff, bufsiz);
       } else {
-         if (bufsiz < 4)
-            return 0; // return to wait until buffer is full enough
-         uint16_t proto = (((uint16_t)buff[2]) << 8) | buff[3];
-         Debug1("Proto %x", proto);
-         size_t to_write;
-         switch(proto) {
-            case 0x0800: // ip 4 ETH_P_IP
-               to_write = _packet_len_from_ip_header(&buff[4], bufsiz - 4);
-               break;
-            case 0x86DD: // ip 6 ETH_P_IPV6
-               to_write = _packet_len_from_ip6_header(&buff[4], bufsiz - 4);
-               break;
-            default:
-               // unknown
-               return bufsiz;
+         if (bufsiz < XIO_TUN_ETHERNET_LENGTH)
+            return 0; // wait until ethernet header is filled
+
+         uint16_t proto = (((uint16_t)buff[12]) << 8) | buff[13];
+
+         ssize_t to_write = _len_to_write_from_l3(proto, buff + XIO_TUN_ETHERNET_LENGTH, bufsiz - XIO_TUN_ETHERNET_LENGTH);
+         if (to_write < 0) {
+            // l3 header mismatches ethertype. this situation is very unlikely
+            // anyway, we can't determine packet length, so pass it as is
+            return bufsiz;
          }
          if (to_write > 0)
-            return 4 + to_write;
-         return 0;
+            return XIO_TUN_ETHERNET_LENGTH + to_write;
+         return 0; // not known yet
       }
    } else {
-      // todo tap
-      return bufsiz;
+      if (bufsiz < XIO_TUN_PI_LENGTH)
+         return 0; // return to wait until the buffer is full enough
+      uint16_t proto = (((uint16_t)buff[2]) << 8) | buff[3];
+      Debug1("Proto %x", proto);
+      size_t l3_offset = XIO_TUN_PI_LENGTH;
+      ssize_t to_write = 0;
+      if (pipe->para.tun.tuntype == XIOTUNTYPE_TUN) {
+         to_write = _len_to_write_from_l3(proto, buff + l3_offset, bufsiz - l3_offset);
+         if (to_write < 0) {
+            // what follows is another PI. Pass the current one to
+            // the interface first
+            return XIO_TUN_PI_LENGTH;
+         }
+         if (to_write > 0)
+            return XIO_TUN_PI_LENGTH + to_write;
+      } else {
+         if (bufsiz < XIO_TUN_PI_LENGTH + XIO_TUN_ETHERNET_LENGTH)
+            return 0; // wait until PI + ethernet parts are in buffer
+         uint16_t proto_eth = (((uint16_t)buff[12+XIO_TUN_PI_LENGTH]) << 8) | buff[13+XIO_TUN_PI_LENGTH];
+         if (proto_eth != proto) {
+            // what follows is another PI. Pass the current one to
+            // the interface first
+            return XIO_TUN_PI_LENGTH;
+         }
+         l3_offset += XIO_TUN_ETHERNET_LENGTH;
+         to_write = _len_to_write_from_l3(proto, buff + l3_offset, bufsiz - l3_offset);
+         if (to_write > 0)
+            return XIO_TUN_PI_LENGTH + XIO_TUN_ETHERNET_LENGTH + to_write;
+      }
+      return 0;
    }
 }
 
