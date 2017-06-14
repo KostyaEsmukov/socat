@@ -719,8 +719,10 @@ int _socat(void) {
        *fd2in  = &fds[2],
        *fd2out = &fds[3];
    int retval;
-   unsigned char *buff;
-   size_t buff_pos = 0;
+   unsigned char *buff1;
+   size_t buff_pos1 = 0;
+   unsigned char *buff2;
+   size_t buff_pos2 = 0;
    ssize_t bytes1, bytes2;
    int polling = 0;	/* handling ignoreeof */
    int wasaction = 1;	/* last poll was active, do NOT sleep before next */
@@ -756,8 +758,9 @@ int _socat(void) {
 #endif /* WITH_FILAN */
 
    /* when converting nl to crnl, size might double */
-   buff = Malloc(2*socat_opts.bufsiz+1);
-   if (buff == NULL)  return -1;
+   buff1 = Malloc(2*socat_opts.bufsiz+1);
+   buff2 = Malloc(2*socat_opts.bufsiz+1);
+   if (buff1 == NULL || buff2 == NULL)  return -1;
 
    if (socat_opts.logopt == 'm' && xioinqopt('l', NULL, 0) == 'm') {
       Info("switching to syslog");
@@ -792,7 +795,8 @@ int _socat(void) {
 	       if (total_timeout.tv_sec < 0 ||
 		   total_timeout.tv_sec == 0 && total_timeout.tv_usec < 0) {
 		  Notice("inactivity timeout triggered");
-		  free(buff);
+		  free(buff1);
+		  free(buff2);
 		  return 0;
 	       }
 	    }
@@ -905,7 +909,8 @@ int _socat(void) {
 		 fds[0].fd, fds[0].events, fds[1].fd, fds[1].events,
 		 fds[2].fd, fds[2].events, fds[3].fd, fds[3].events,
 		 timeout.tv_sec, timeout.tv_usec, strerror(errno));
-		  free(buff);
+		  free(buff1);
+		  free(buff2);
 	    return -1;
       } else if (retval == 0) {
 	 Info2("poll timed out (no data within %ld.%06ld seconds)",
@@ -927,7 +932,8 @@ int _socat(void) {
 		    socat_opts.total_timeout.tv_usec != 0) {
 	    /* there was a total inactivity timeout */
 	    Notice("inactivity timeout triggered");
-		  free(buff);
+		  free(buff1);
+		  free(buff2);
 	    return 0;
 	 }
 
@@ -946,7 +952,8 @@ int _socat(void) {
 	       named pipe. a read() might imm. return with 0 bytes, resulting
 	       in a loop? */
 	    Error1("poll(...[%d]: invalid request", fd1in->fd);
-		  free(buff);
+		  free(buff1);
+		  free(buff2);
 	    return -1;
 	 }
 	 mayrd1 = true;
@@ -955,7 +962,8 @@ int _socat(void) {
 	  (fd2in->revents)) {
 	 if (fd2in->revents & POLLNVAL) {
 	    Error1("poll(...[%d]: invalid request", fd2in->fd);
-		  free(buff);
+		  free(buff1);
+		  free(buff2);
 	    return -1;
 	 }
 	 mayrd2 = true;
@@ -963,7 +971,8 @@ int _socat(void) {
       if (XIO_GETWRFD(sock1) >= 0 && fd1out->fd >= 0 && fd1out->revents) {
 	 if (fd1out->revents & POLLNVAL) {
 	    Error1("poll(...[%d]: invalid request", fd1out->fd);
-		  free(buff);
+		  free(buff1);
+		  free(buff2);
 	    return -1;
 	 }
 	 maywr1 = true;
@@ -971,7 +980,8 @@ int _socat(void) {
       if (XIO_GETWRFD(sock2) >= 0 && fd2out->fd >= 0 && fd2out->revents) {
 	 if (fd2out->revents & POLLNVAL) {
 	    Error1("poll(...[%d]: invalid request", fd2out->fd);
-		  free(buff);
+		  free(buff1);
+		  free(buff2);
 	    return -1;
 	 }
 	 maywr2 = true;
@@ -979,7 +989,7 @@ int _socat(void) {
 
       if (mayrd1 && maywr2) {
 	 mayrd1 = false;
-	 if ((bytes1 = xiotransfer(sock1, sock2, &buff, &buff_pos, socat_opts.bufsiz, false))
+	 if ((bytes1 = xiotransfer(sock1, sock2, &buff1, &buff_pos1, socat_opts.bufsiz, false))
 	     < 0) {
 	    if (errno != EAGAIN) {
 	       closing = MAX(closing, 1);
@@ -1011,7 +1021,7 @@ int _socat(void) {
 
       if (mayrd2 && maywr1) {
 	 mayrd2 = false;
-	 if ((bytes2 = xiotransfer(sock2, sock1, &buff, &buff_pos, socat_opts.bufsiz, true))
+	 if ((bytes2 = xiotransfer(sock2, sock1, &buff2, &buff_pos2, socat_opts.bufsiz, true))
 	     < 0) {
 	    if (errno != EAGAIN) {
 	       closing = MAX(closing, 1);
@@ -1097,7 +1107,8 @@ int _socat(void) {
    xioclose(sock1);
    xioclose(sock2);
 
-		  free(buff);
+		  free(buff1);
+		  free(buff2);
    return 0;
 }
 

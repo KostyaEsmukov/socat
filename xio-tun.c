@@ -291,13 +291,14 @@ size_t _packet_len(struct single *pipe, const uint8_t *buff, size_t bufsiz) {
          }
          if (to_write > 0)
             return XIO_TUN_PI_LENGTH + to_write;
-      } else {
+      } else { // tap
          if (bufsiz < XIO_TUN_PI_LENGTH + XIO_TUN_ETHERNET_LENGTH)
             return 0; // wait until PI + ethernet parts are in buffer
          uint16_t proto_eth = (((uint16_t)buff[12+XIO_TUN_PI_LENGTH]) << 8) | buff[13+XIO_TUN_PI_LENGTH];
          if (proto_eth != proto) {
-            // what follows is another PI. Pass the current one to
+            // what follows is (probably) another PI. Pass the current one to
             // the interface first
+            Debug2("etherType in PI and ethernet header mismatch. Treating as extra PI. PI: %x. ETH: %x", proto, proto_eth);
             return XIO_TUN_PI_LENGTH;
          }
          l3_offset += XIO_TUN_ETHERNET_LENGTH;
