@@ -316,9 +316,11 @@ ssize_t xiowrite_tun(struct single *pipe, const void *buff, size_t bufsiz) {
    ssize_t writt_total = 0;
 
    while (writt_total < bufsiz) {
-      ssize_t packet_len = _packet_len(pipe, buff + writt_total, bufsiz - writt_total);
-      if (packet_len == 0 || packet_len > bufsiz) {
-         Debug1("Skipping buf len %d", bufsiz);
+      const void *buff_packet = buff + writt_total;
+      size_t bufsiz_packet = bufsiz - writt_total;
+      ssize_t packet_len = _packet_len(pipe, buff_packet, bufsiz_packet);
+      if (packet_len == 0 || packet_len > bufsiz_packet) {
+         Debug1("Skipping buf len %d", bufsiz_packet);
          if (writt_total == 0) {
             // don't write anything yet, wait until buffer contains full
             // IP packet
@@ -328,11 +330,11 @@ ssize_t xiowrite_tun(struct single *pipe, const void *buff, size_t bufsiz) {
          break;
       }
 
-      if (packet_len != bufsiz) {
-         Debug2("Partial packetwrite. %d out of %d", packet_len, bufsiz);
+      if (packet_len != bufsiz_packet) {
+         Debug2("Partial packetwrite. %d out of %d", packet_len, bufsiz_packet);
       }
 
-      ssize_t writt = writefull(pipe->fd, buff, packet_len);
+      ssize_t writt = writefull(pipe->fd, buff_packet, packet_len);
       if (writt < 0) {
          _errno = errno;
          switch (_errno) {
@@ -340,13 +342,13 @@ ssize_t xiowrite_tun(struct single *pipe, const void *buff, size_t bufsiz) {
             case ECONNRESET:
                if (pipe->cool_write) {
                   Notice4("write(%d, %p, "F_Zu"): %s",
-                        pipe->fd, buff, packet_len, strerror(_errno));
+                        pipe->fd, buff_packet, packet_len, strerror(_errno));
                   break;
                }
                /*PASSTHROUGH*/
             default:
                Error4("write(%d, %p, "F_Zu"): %s",
-                     pipe->fd, buff, packet_len, strerror(_errno));
+                     pipe->fd, buff_packet, packet_len, strerror(_errno));
          }
          errno = _errno;
          return -1;
