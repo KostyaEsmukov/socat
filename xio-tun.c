@@ -229,7 +229,8 @@ ssize_t _packet_len_from_ip6_header(const uint8_t *buff, size_t bufsiz) {
    if ((buff[0] >> 4) != 6)
        return -1; // not ipv6
 
-   return (((size_t)buff[4]) << 8) | buff[5];
+   // 40 - ipv6 header length
+   return 40 + ((((size_t)buff[4]) << 8) | buff[5]);
 }
 
 ssize_t _packet_len_from_arp_header(const uint8_t *buff, size_t bufsiz) {
