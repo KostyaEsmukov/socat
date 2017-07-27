@@ -11,6 +11,7 @@
 #include "xio-socket.h"
 #include "xio-readline.h"
 #include "xio-openssl.h"
+#include "xio-tun.h"
 
  
 /* xioread() performs read() or recvfrom()
@@ -99,6 +100,15 @@ ssize_t xioread(xiofile_t *file, void *buff, size_t bufsiz) {
       }      
       break;
 #endif /* WITH_READLINE */
+
+#if WITH_TUN
+   case XIOREAD_TUN:
+      /* this function prints its error messages */
+      if ((bytes = xioread_tun(pipe, buff, bufsiz)) < 0) {
+	 return -1;
+      }
+      break;
+#endif /* WITH_TUN */
 
 #if WITH_OPENSSL
    case XIOREAD_OPENSSL:

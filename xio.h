@@ -47,6 +47,7 @@ struct opt;
 #define XIOREAD_PTY		0x4000	/* handle EIO */
 #define XIOREAD_READLINE	0x5000	/* ... */
 #define XIOREAD_OPENSSL		0x6000	/* SSL_read() */
+#define XIOREAD_TUN         0x7000  /* read from /dev/tun */
 #define XIODATA_WRITEMASK	0x0f00	/* mask for basic r/w method */
 #define XIOWRITE_STREAM		0x0100	/* write() (default) */
 #define XIOWRITE_SENDTO		0x0200	/* sendto() */
@@ -77,7 +78,7 @@ struct opt;
 #define XIODATA_PTY		(XIOREAD_PTY|XIOWRITE_STREAM)
 #define XIODATA_READLINE	(XIOREAD_READLINE|XIOWRITE_STREAM)
 #define XIODATA_OPENSSL		(XIOREAD_OPENSSL|XIOWRITE_OPENSSL)
-#define XIODATA_TUN             (XIOREAD_STREAM|XIOWRITE_TUN)
+#define XIODATA_TUN             (XIOREAD_TUN|XIOWRITE_TUN)
 
 /* these are the values allowed for the "enum xiotag  tag" flag of the "struct
    single" and "union bipipe" (xiofile_t) structures. */
@@ -241,6 +242,7 @@ typedef struct single {
              XIOTUNTYPE_TAP,
          } tuntype;
          bool no_pi;
+         bool slip;
       } tun;
 #endif /* WITH_TUN */
    } para;

@@ -22,6 +22,7 @@ const struct optdesc opt_tun_device    = { "tun-device",     NULL,      OPT_TUN_
 const struct optdesc opt_tun_name      = { "tun-name",       NULL,      OPT_TUN_NAME,        GROUP_INTERFACE, PH_FD,   TYPE_STRING,   OFUNC_SPEC };
 const struct optdesc opt_tun_type      = { "tun-type",       NULL,      OPT_TUN_TYPE,        GROUP_INTERFACE, PH_FD,   TYPE_STRING,   OFUNC_SPEC };
 const struct optdesc opt_iff_no_pi     = { "iff-no-pi",       "no-pi",       OPT_IFF_NO_PI,         GROUP_TUN,       PH_FD,   TYPE_BOOL,   OFUNC_SPEC };
+const struct optdesc opt_iff_slip      = { "iff-slip",        "slip",        OPT_IFF_SLIP,          GROUP_TUN,       PH_FD,   TYPE_BOOL,   OFUNC_SPEC };
 /*0 const struct optdesc opt_interface_addr    = { "interface-addr",    "address", OPT_INTERFACE_ADDR,    GROUP_INTERFACE, PH_FD, TYPE_STRING,   OFUNC_SPEC };*/
 /*0 const struct optdesc opt_interface_netmask = { "interface-netmask", "netmask", OPT_INTERFACE_NETMASK, GROUP_INTERFACE, PH_FD, TYPE_STRING,   OFUNC_SPEC };*/
 const struct optdesc opt_iff_up          = { "iff-up",          "up",          OPT_IFF_UP,          GROUP_INTERFACE, PH_FD,   TYPE_BOOL,     OFUNC_OFFSET_MASKS, XIO_OFFSETOF(para.tun.iff_opts), XIO_SIZEOF(para.tun.iff_opts), IFF_UP };
@@ -70,6 +71,7 @@ static int xioopen_tun(int argc, const char *argv[], struct opt *opts, int xiofl
    int pf = /*! PF_UNSPEC*/ PF_INET;
    struct xiorange network;
    bool no_pi = false;
+   bool slip = false;
    const char *namedargv[] = { "tun", NULL, NULL };
    int rw = (xioflags & XIO_ACCMODE);
    bool exists;
@@ -133,6 +135,10 @@ static int xioopen_tun(int argc, const char *argv[], struct opt *opts, int xiofl
 	 ifr.ifr_flags &= ~IFF_NO_PI;
 #endif
       }
+   }
+
+   if (retropt_bool(opts, OPT_IFF_SLIP, &slip) == 0) {
+      xfd->stream.para.tun.slip = slip;
    }
 
    if (Ioctl(xfd->stream.fd, TUNSETIFF, &ifr) < 0) {
@@ -255,7 +261,7 @@ ssize_t _len_to_write_from_l3(uint16_t proto, const uint8_t *buff, size_t bufsiz
    }
 }
 
-size_t _packet_len(struct single *pipe, const uint8_t *buff, size_t bufsiz) {
+size_t _packet_len_from_l3_header(struct single *pipe, const uint8_t *buff, size_t bufsiz) {
    if (pipe->para.tun.no_pi) {
       if (pipe->para.tun.tuntype == XIOTUNTYPE_TUN) {
          // todo is it always ip4?
@@ -311,15 +317,83 @@ size_t _packet_len(struct single *pipe, const uint8_t *buff, size_t bufsiz) {
    }
 }
 
+void _slip_transform_if_full_frame(uint8_t *buff, size_t bufsiz, ssize_t * packet_len, ssize_t * raw_packet_len) {
+   // find packet end mark. if found, transform the packet (strip escapes).
+   // SLIP protocol reference: https://tools.ietf.org/html/rfc1055
+   ssize_t slip_end_pos = -1;
+
+   // find packet boundary first
+   ssize_t i;
+   for (i = 0; i < bufsiz; i++) {
+      if (buff[i] == SLIP_END) {
+         slip_end_pos = i;
+         break;
+      }
+   }
+   if (slip_end_pos == -1) {  // not a full frame yet
+      Debug1("SLIP: not full frame. %d", bufsiz);
+      *packet_len = 0;
+      *raw_packet_len = 0;
+      return;
+   }
+
+   // now as we've got a full packet, lets transform it
+   ssize_t pos = 0; // transformed
+   ssize_t pos_raw;
+   for (pos_raw = 0; pos_raw < slip_end_pos;) {
+      assert(buff[pos_raw] != SLIP_END);
+      switch (buff[pos_raw]) {
+         case SLIP_ESC:
+            switch (buff[pos_raw + 1]) {
+               case SLIP_ESC_END:
+                  buff[pos] = SLIP_END;
+                  break;
+               case SLIP_ESC_ESC:
+                  buff[pos] = SLIP_ESC;
+                  break;
+               default: // not valid SLIP actually. write some junk
+                  buff[pos] = buff[pos_raw + 1];
+            }
+            pos++;
+            pos_raw += 2;
+            break;
+         default:
+            buff[pos] = buff[pos_raw];
+            pos++;
+            pos_raw++;
+            break;
+      }
+   }
+   *packet_len = pos;
+   *raw_packet_len = slip_end_pos + 1;
+}
+
 /* on result < 0: errno reflects the value from write() */
-ssize_t xiowrite_tun(struct single *pipe, const void *buff, size_t bufsiz) {
-   int _errno;
-   ssize_t writt_total = 0;
+ssize_t xiowrite_tun(struct single *pipe, void *buff, size_t bufsiz) {
+   // SLIP transformation never grows a packet.
+   ssize_t writt_total = 0;  // bytes already drained from the buff (before SLIP transformation)
+   ssize_t packet_len;  // length of complete L2/L3 frame to write to the tun (after SLIP transformation)
+   ssize_t raw_packet_len;  // length of raw L2/L3 packet (before SLIP)
 
    while (writt_total < bufsiz) {
-      const void *buff_packet = buff + writt_total;
-      size_t bufsiz_packet = bufsiz - writt_total;
-      ssize_t packet_len = _packet_len(pipe, buff_packet, bufsiz_packet);
+      void *buff_packet = buff + writt_total;  // pointer to the current L2/L3 frame in buffer
+      size_t bufsiz_packet = bufsiz - writt_total;  // length of buffer tail
+      if (pipe->para.tun.slip) {
+         _slip_transform_if_full_frame(buff_packet, bufsiz_packet, &packet_len, &raw_packet_len);
+         // if packet_len is not 0, then buf definitely contains the whole frame (already transformed)
+         // if packet_len == 0 , raw_packet_len might be > 0 - that means an END without a frame before it
+      } else {
+         packet_len = _packet_len_from_l3_header(pipe, buff_packet, bufsiz_packet);
+         raw_packet_len = packet_len;  // we don't make any transformations here
+      }
+      assert(packet_len <= raw_packet_len);
+
+      if (packet_len == 0 && raw_packet_len > 0 && raw_packet_len <= bufsiz_packet) {
+         // skip junky frame
+         writt_total += raw_packet_len;
+         continue;
+      }
+
       if (packet_len == 0 || packet_len > bufsiz_packet) {
          Debug1("Skipping buf len %d", bufsiz_packet);
          if (writt_total == 0) {
@@ -337,7 +411,7 @@ ssize_t xiowrite_tun(struct single *pipe, const void *buff, size_t bufsiz) {
 
       ssize_t writt = writefull(pipe->fd, buff_packet, packet_len);
       if (writt < 0) {
-         _errno = errno;
+         int _errno = errno;
          switch (_errno) {
             case EPIPE:
             case ECONNRESET:
@@ -354,9 +428,77 @@ ssize_t xiowrite_tun(struct single *pipe, const void *buff, size_t bufsiz) {
          errno = _errno;
          return -1;
       }
-      writt_total += writt;
+      // tun accepts the whole frame in a single write syscall.
+      // thus we can rely on an assumption:
+      assert(writt == packet_len);
+      writt_total += raw_packet_len;  // skip buf space equal to raw packet length
    }
    return writt_total;
 }
+
+
+ssize_t xioread_tun(struct single *pipe, uint8_t *buff, size_t bufsiz) {
+   ssize_t bytes;
+   do {
+      bytes = Read(pipe->fd, buff, bufsiz);
+   } while (bytes < 0 && errno == EINTR);
+
+   if (bytes < 0) {
+      int _errno = errno;
+      switch (_errno) {
+         case EPIPE: case ECONNRESET:
+            Warn4("read(%d, %p, "F_Zu"): %s",
+            pipe->fd, buff, bufsiz, strerror(_errno));
+            break;
+
+         default:
+            Error4("read(%d, %p, "F_Zu"): %s", pipe->fd, buff, bufsiz, strerror(_errno));
+      }
+      errno = _errno;
+      return -1;
+   }
+
+   // a full frame is guaranteed to be returned by a single read syscall
+   // so we've got a full frame in the buffer now.
+
+   if (!pipe->para.tun.slip)
+      return bytes; // no transformations required
+
+   // apply SLIP transformations
+
+   // they never shrink the frame: they only grow it.
+   // here's a hack: copy the frame to the tail of buffer
+   // so we can grow the packet when escaping END/ESC bytes.
+   memmove(buff + bufsiz - bytes, buff, bytes);
+   ssize_t pos_transformed = 0;
+   ssize_t pos;
+   for (pos = bufsiz - bytes; pos < bufsiz; pos++) {
+      if (pos_transformed + 2 >= pos) { // looks like the buffer is too small for that packet.
+         Warn2("Packets overlap on applying SLIP transformations to a packet "
+               "read from tun. This packet is skipped. Consider increasing "
+               "buffer length. (%d, %d)", bytes, bufsiz);
+         errno = EAGAIN;
+         return -1;  // drop packet
+      }
+      switch (buff[pos]) {
+         case SLIP_END:
+            buff[pos_transformed] = SLIP_ESC;
+            buff[pos_transformed + 1] = SLIP_ESC_END;
+            pos_transformed += 2;
+            break;
+         case SLIP_ESC:
+            buff[pos_transformed] = SLIP_ESC;
+            buff[pos_transformed + 1] = SLIP_ESC_ESC;
+            pos_transformed += 2;
+            break;
+         default:
+            buff[pos_transformed] = buff[pos];
+            pos_transformed++;
+      }
+   }
+   buff[pos_transformed] = SLIP_END;
+   return pos_transformed + 1;
+}
+
 
 #endif /* WITH_TUN */

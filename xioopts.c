@@ -19,37 +19,37 @@ bool xioopts_ignoregroups;
 #if WITH_NAMED
 #  define IF_NAMED(a,b) {a,b},
 #else
-#  define IF_NAMED(a,b) 
+#  define IF_NAMED(a,b)
 #endif
 
 #if WITH_PIPE || WITH_GOPEN
 #  define IF_OPEN(a,b) {a,b},
 #else
-#  define IF_OPEN(a,b) 
+#  define IF_OPEN(a,b)
 #endif
 
 #if WITH_TERMIOS
 #  define IF_TERMIOS(a,b) {a,b},
 #else
-#  define IF_TERMIOS(a,b) 
+#  define IF_TERMIOS(a,b)
 #endif
 
 #if WITH_EXEC
 #  define IF_EXEC(a,b) {a,b},
 #else
-#  define IF_EXEC(a,b) 
+#  define IF_EXEC(a,b)
 #endif
 
 #if _WITH_SOCKET
 #  define IF_SOCKET(a,b) {a,b},
 #else
-#  define IF_SOCKET(a,b) 
+#  define IF_SOCKET(a,b)
 #endif
 
 #if WITH_LISTEN
 #  define IF_LISTEN(a,b) {a,b},
 #else
-#  define IF_LISTEN(a,b) 
+#  define IF_LISTEN(a,b)
 #endif
 
 #if (WITH_UDP || WITH_TCP) && WITH_LISTEN
@@ -61,43 +61,43 @@ bool xioopts_ignoregroups;
 #if WITH_IP4 || WITH_IP6
 #  define IF_IP(a,b) {a,b},
 #else
-#  define IF_IP(a,b) 
+#  define IF_IP(a,b)
 #endif
 
 #if WITH_IP6
 #  define IF_IP6(a,b) {a,b},
 #else
-#  define IF_IP6(a,b) 
+#  define IF_IP6(a,b)
 #endif
 
 #if WITH_TCP|WITH_UDP
 #  define IF_IPAPP(a,b) {a,b},
 #else
-#  define IF_IPAPP(a,b) 
+#  define IF_IPAPP(a,b)
 #endif
 
 #if WITH_TCP
 #  define IF_TCP(a,b) {a,b},
 #else
-#  define IF_TCP(a,b) 
+#  define IF_TCP(a,b)
 #endif
 
 #if WITH_SCTP
 #  define IF_SCTP(a,b) {a,b},
 #else
-#  define IF_SCTP(a,b) 
+#  define IF_SCTP(a,b)
 #endif
 
 #if WITH_SOCKS4
 #  define IF_SOCKS4(a,b) {a,b},
 #else
-#  define IF_SOCKS4(a,b) 
+#  define IF_SOCKS4(a,b)
 #endif
 
 #if WITH_PROXY
 #  define IF_PROXY(a,b) {a,b},
 #else
-#  define IF_PROXY(a,b) 
+#  define IF_PROXY(a,b)
 #endif
 
 #if WITH_READLINE
@@ -133,7 +133,7 @@ bool xioopts_ignoregroups;
 #if WITH_RETRY
 #  define IF_RETRY(a,b) {a,b},
 #else
-#  define IF_RETRY(a,b) 
+#  define IF_RETRY(a,b)
 #endif
 
 
@@ -596,6 +596,7 @@ const struct optname optionnames[] = {
 	IF_TUN    ("iff-promisc",	&opt_iff_promisc)
 	IF_TUN    ("iff-running",	&opt_iff_running)
 	IF_TUN    ("iff-slave",	&opt_iff_slave)
+	IF_TUN    ("iff-slip",	&opt_iff_slip)
 	IF_TUN    ("iff-up",	&opt_iff_up)
 	IF_TERMIOS("ignbrk",	&opt_ignbrk)
 	IF_TERMIOS("igncr",	&opt_igncr)
@@ -938,7 +939,7 @@ const struct optname optionnames[] = {
 #ifdef O_NOFOLLOW
 	IF_OPEN   ("nofollow",	&opt_o_nofollow)
 #endif
-	IF_EXEC   ("nofork",	&opt_nofork) 
+	IF_EXEC   ("nofork",	&opt_nofork)
 #ifdef O_NOINHERIT
 	IF_ANY    ("noinherit",		&opt_o_noinherit)
 #endif
@@ -1368,6 +1369,7 @@ const struct optname optionnames[] = {
 	IF_SOCKET ("siocspgrp",	&opt_siocspgrp)
 #endif
 	IF_TUN    ("slave",	&opt_iff_slave)
+	IF_TUN    ("slip",	&opt_iff_slip)
 	IF_SOCKET ("sndbuf",	&opt_so_sndbuf)
 	IF_SOCKET ("sndbuf-late",	&opt_so_sndbuf_late)
 #ifdef SO_SNDLOWAT
@@ -1741,20 +1743,20 @@ const struct optname optionnames[] = {
 } ;
 
 
-/* walks the text argument a and writes its options that conform to groups 
+/* walks the text argument a and writes its options that conform to groups
    to the array opts. Uses the option table 'optionnames'.
-   returns 0 on success, -1 on error, 1 on unknown/wrong option  
+   returns 0 on success, -1 on error, 1 on unknown/wrong option
 */
 int parseopts(const char **a, unsigned int groups, struct opt **opts) {
 
-   return parseopts_table(a, groups, opts, optionnames, 
+   return parseopts_table(a, groups, opts, optionnames,
 			  sizeof(optionnames)/sizeof(struct optname)-1);
 }
 
 
-/* walks the text argument a and writes its options that conform to groups 
+/* walks the text argument a and writes its options that conform to groups
    to the array opts. Uses the specified option table.
-   returns 0 on success, -1 on error, 1 on unknown/wrong option  
+   returns 0 on success, -1 on error, 1 on unknown/wrong option
 */
 int parseopts_table(const char **a, unsigned int groups, struct opt **opts,
 	      const struct optname optionnames[], size_t optionnum) {
@@ -1854,7 +1856,7 @@ int parseopts_table(const char **a, unsigned int groups, struct opt **opts,
 #endif
       }
       (*opts)[i].desc = ent->desc;
-      
+
       if (!strncmp(*a, assign_str, strlen(assign_str))) {
 	 /* there is an assignment (mostly "=") */
 	 (*a) += strlen(assign_str);
@@ -2117,7 +2119,7 @@ int parseopts_table(const char **a, unsigned int groups, struct opt **opts,
 
 #if LATER
       case TYPE_INT3:
-	 
+
 	 break;
 #endif
 
@@ -2379,7 +2381,7 @@ int parseopts_table(const char **a, unsigned int groups, struct opt **opts,
 	    *buffp++ = '\0';
 	    (*opts)[i].value.u_ip_mreq.param2 = strdup(buff); /*!!! NULL */
 
-#if HAVE_STRUCT_IP_MREQN	    
+#if HAVE_STRUCT_IP_MREQN
 	    if (*tokp++ == ':') {
 	       strncpy((*opts)[i].value.u_ip_mreq.ifindex, tokp, IF_NAMESIZE);	/* ok */
 	       Info4("setting option \"%s\" to {\"%s\",\"%s\",\"%s\"}",
@@ -2562,7 +2564,7 @@ int showleft(const struct opt *opts) {
 /* does not set GROUP_FD; cannot determine GROUP_TERMIOS ! */
 int _groupbits(mode_t mode) {
    unsigned int result = 0;
-  
+
    switch ((mode&S_IFMT)>>12) {
    case (S_IFIFO>>12):	/* 1, FIFO */
       result = GROUP_FIFO;   break;
@@ -2655,8 +2657,8 @@ int retropt_timespec(struct opt *opts, int optcode, struct timespec *result) {
    opt->desc = ODESC_DONE;
    return 0;
 }
-      
-   
+
+
 /* Looks for the first option of type <optcode>. If the option is found,
    this function stores its bool value in *result, "consumes" the
    option, and returns 0.
@@ -2931,7 +2933,7 @@ int retropt_bind(struct opt *opts,
 	  != STAT_OK) {
 	 Error("error resolving bind option");
 	 return STAT_NORETRY;
-      }	   
+      }
       break;
 #endif /* WITH_IP4 || WITH_IP6 */
 
@@ -3281,7 +3283,7 @@ int applyopts(int fd, struct opt *opts, enum e_phase phase) {
 		   opt->desc->type);
 	 }
 #endif /* _WITH_SOCKET */
-	 
+
 #if HAVE_FLOCK
       } else if (opt->desc->func == OFUNC_FLOCK) {
 	 if (Flock(fd, opt->desc->major) < 0) {
@@ -3333,7 +3335,7 @@ int applyopts(int fd, struct opt *opts, enum e_phase phase) {
 	       opt->desc = ODESC_ERROR; ++opt; continue;
 	    }
 #endif /* HAVE_FTRUNCATE64 */
-	    break; 
+	    break;
 	 case OPT_F_SETLK_RD:
 	 case OPT_F_SETLK_WR:
 	 case OPT_F_SETLKW_RD:
@@ -3350,7 +3352,7 @@ int applyopts(int fd, struct opt *opts, enum e_phase phase) {
 		  opt->desc = ODESC_ERROR; ++opt; continue;
 	       }
 	    }
-	    break; 
+	    break;
 	 case OPT_SETUID_EARLY:
 	 case OPT_SETUID:
 	    if (Setuid(opt->value.u_uidt) < 0) {
@@ -3462,7 +3464,7 @@ int applyopts(int fd, struct opt *opts, enum e_phase phase) {
 	       } else {
 		  if (Setsid() < 0) {
 		     Error1("setsid(): %s", strerror(errno));
-		  }		  
+		  }
 	       }
 	    }
 	    break;
@@ -3808,7 +3810,7 @@ int applyopts_flags(struct opt *opts, int group, flags_t *result) {
    if (!opts)  return 0;
 
    while (opt->desc != ODESC_END) {
-      if (opt->desc != ODESC_DONE && 
+      if (opt->desc != ODESC_DONE &&
 	  (opt->desc->group & group)) {
 	 if (opt->desc->func == OFUNC_FLAG) {
 	    if (opt->value.u_bool) {
@@ -3985,7 +3987,7 @@ int applyopts_single(struct single *xfd, struct opt *opts, enum e_phase phase) {
 	 }
 	 xfd->havelock = true;
 	 break;
-	 
+
       default:
 	 /* just store the value in the correct component of struct single */
 	 if (opt->desc->type == TYPE_CONST) {
@@ -4070,7 +4072,7 @@ mc:addr
 		  if (ifindex(opt->value.u_ip_mreq.ifindex,
 			      (unsigned int *)&ip4_mreqn.mreqn.imr_ifindex, -1)
 		      < 0) {
-		     Error1("cannot resolve interface \"%s\"", 
+		     Error1("cannot resolve interface \"%s\"",
 			    opt->value.u_ip_mreq.ifindex);
 		  }
 #endif /* HAVE_STRUCT_IP_MREQN */
@@ -4096,7 +4098,7 @@ mc:addr
 		     ip4_mreqn.mreq.imr_interface = sockaddr2.ip4.sin_addr;
 		  }
 	       }
-			
+
 #if LATER
 	       if (0) {
 		  ; /* for canonical reasons */

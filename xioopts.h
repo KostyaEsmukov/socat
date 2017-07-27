@@ -334,6 +334,7 @@ enum e_optcode {
    OPT_IFF_NOARP,	/* struct ifreq.ifr_flags */
    OPT_IFF_NOTRAILERS,	/* struct ifreq.ifr_flags */
    OPT_IFF_NO_PI,	/* tun: IFF_NO_PI */
+   OPT_IFF_SLIP,	/* tun: IFF_SLIP */
    OPT_IFF_PORTSEL,	/* struct ifreq.ifr_flags */
    OPT_IFF_POINTOPOINT,	/* struct ifreq.ifr_flags */
    OPT_IFF_PROMISC,	/* struct ifreq.ifr_flags */
