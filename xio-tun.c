@@ -352,6 +352,7 @@ void _slip_transform_if_full_frame(uint8_t *buff, size_t bufsiz, ssize_t * packe
                   buff[pos] = SLIP_ESC;
                   break;
                default: // not valid SLIP actually. write some junk
+                  Warn1("Invalid data after SLIP_ESC: %x. Skipping ESC byte.", buff[pos_raw + 1]);
                   buff[pos] = buff[pos_raw + 1];
             }
             pos++;
@@ -467,7 +468,7 @@ ssize_t xioread_tun(struct single *pipe, uint8_t *buff, size_t bufsiz) {
    // apply SLIP transformations
 
    // they never shrink the frame: they only grow it.
-   // here's a hack: copy the frame to the tail of buffer
+   // here's a hack: move the frame to the tail of buffer
    // so we can grow the packet when escaping END/ESC bytes.
    memmove(buff + bufsiz - bytes, buff, bytes);
    ssize_t pos_transformed = 0;
